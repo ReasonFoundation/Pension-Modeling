@@ -1,0 +1,87 @@
+---
+title: "Pension Modeling Walkthrough"
+author: "A Abbott"
+date: "2/11/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Pension Modeling
+
+
+
+```{r }
+library(tidyverse)
+library(here)
+library(msm)
+library(plotly)
+source(here("R", "functions.R"))
+```
+
+## Population Generation
+
+Inputs:
+- Number of Employees
+- Entry Age
+- Retirement Age
+- Age distribution (median age, standard deviation for use in rtnorm function)
+- Mortality table for retirees
+
+
+```{r population_inputs}
+pop_size <- 208244
+entry_age <- 20
+ret_age <- 65
+pop_maturity_type <- 'custom'
+mean_age_active <- 45.4
+sd_age_active <- 15
+mort <- 'RP2014_Employee_total'
+max_age <- 100
+
+population_actives <- generate_pop_actives(entry_age = entry_age, ret_age = ret_age, pop_maturity_type = pop_maturity_type, pop_size = pop_size, mean_age_active = mean_age_active, sd_age_active = sd_age_active)
+
+mort_tab <- switch(
+  mort,
+  "RP2014_Employee_total" = 2,
+  "RP2000_Employee_total" = 4,
+  "RP2010_Employee_total" = 6
+)
+
+population_retirees <- generate_pop_retirees(entry_age = entry_age, ret_age = ret_age, mort_tab = mort_tab, population_actives = population_actives)
+```
+
+```{r population_histogram, echo = FALSE}
+plot_ly(
+  x = population_actives,
+  opacity = 0.7,
+  type = "histogram",
+  name = "Current Employees",
+  xbins =
+    list(start = entry_age, end = max_age, size = 5)
+) %>%
+  add_trace(
+    x = population_retirees, 
+    name = "Retirees", 
+    type = "histogram",
+    xbins = list(start = entry_age, end = max_age, size = 5)) %>%
+  layout(
+    barmode = "overlay",
+    xaxis = list(
+      title = 'Age',
+      ticks = 'outside',
+      range = c(entry_age, max_age),
+      showticklabels =
+        TRUE,
+      showgrid = TRUE
+    ),
+    yaxis = list(
+      title = 'Count',
+      ticks = 'outside',
+      showticklabels = TRUE
+    )
+  )
+```
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
