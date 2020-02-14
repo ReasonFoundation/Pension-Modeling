@@ -13,7 +13,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 
 
-```{r }
+```{r echo=FALSE}
 library(tidyverse)
 library(here)
 library(msm)
@@ -41,7 +41,7 @@ sd_age_active <- 15
 mort <- 'RP2014_Employee_total'
 max_age <- 100
 
-population_actives <- generate_pop_actives(entry_age = entry_age, ret_age = ret_age, pop_maturity_type = pop_maturity_type, pop_size = pop_size, mean_age_active = mean_age_active, sd_age_active = sd_age_active)
+population_actives <- generate_pop_actives(entry_age = entry_age, ret_age = ret_age, pop_maturity_type = pop_maturity_type, pop_size = pop_size, mean_age_active = mean_age_active, sd_age_active = sd_age_active) 
 
 mort_tab <- switch(
   mort,
@@ -51,37 +51,14 @@ mort_tab <- switch(
 )
 
 population_retirees <- generate_pop_retirees(entry_age = entry_age, ret_age = ret_age, mort_tab = mort_tab, population_actives = population_actives)
+
+members <- bind_rows(population_actives, population_retirees)
 ```
 
-```{r population_histogram, echo = FALSE}
-plot_ly(
-  x = population_actives,
-  opacity = 0.7,
-  type = "histogram",
-  name = "Current Employees",
-  xbins =
-    list(start = entry_age, end = max_age, size = 5)
-) %>%
-  add_trace(
-    x = population_retirees, 
-    name = "Retirees", 
-    type = "histogram",
-    xbins = list(start = entry_age, end = max_age, size = 5)) %>%
-  layout(
-    barmode = "overlay",
-    xaxis = list(
-      title = 'Age',
-      ticks = 'outside',
-      range = c(entry_age, max_age),
-      showticklabels =
-        TRUE,
-      showgrid = TRUE
-    ),
-    yaxis = list(
-      title = 'Count',
-      ticks = 'outside',
-      showticklabels = TRUE
-    )
-  )
+```{r ggplot}
+ggplot(members, aes(color = population)) +
+  geom_histogram(aes(age), binwidth = 5)
+
 ```
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+
