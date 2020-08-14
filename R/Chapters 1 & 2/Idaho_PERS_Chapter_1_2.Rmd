@@ -1,0 +1,400 @@
+---
+title: 'Idaho PERSI: R Modeling Guidebook'
+date: "August 13, 2020"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+header-includes:
+- \usepackage{titling} 
+- \pretitle{\begin{center}
+- \posttitle{\end{center}}
+- \includegraphics[width = 3in, height = 3in]{PERSI.png}\LARGE\\}
+---
+
+\newpage
+
+## Section 1: Pension Plan Benefits
+
+### **I. Retirement Benefit**
+
+* Eligibility
+     + Service Retirement (Normal Retirement): Age 65 with five years of service including six months of membership service (Section 59-1341).
+
+* Amount of Allowance
+    + For each year of credited service, the annual service retirement allowance is 2.0% (2.3%) of the highest 42-month average salary (Section 59-1342).
+    
+* Minimum Benefit
+    + $60 annual allowance for each year of service. The dollar amounts increase after 1974 according to the rate of cost of living increases in retirement allowances (Section 59-1342).
+    
+* Normal Form
+    + Straight life retirement allowance plus any death benefit (Section 59-1351).
+    
+* Optional Form
+    + Actuarial equivalent of the normal form under the options available, according to the mortality and interest basis adopted by the Board (Section 59-1351).
+
+### **II. Early Retirement***
+
+* Eligibility
+     + Age 55 with five years of service, including six months of membership service (contributing members only) (Section 59-1345).
+
+* Amount of Allowance
+    + Full accrued service retirement allowance if age plus service equals 90; otherwise, the accrued service retirement allowance, reduced by 3% for each of the first five years by which the early retirement date precedes the date the member would be eligible to receive the full accrued benefit, and by 5.75% for each additional year (Section 59-1342).       
+
+### **III. Vested Retirement Allowance**
+
+* Eligibility
+    + Former contributing members with five years of membership service are entitled to receive benefits after attaining age 55 (Section 59-1345).  
+         
+* Benefit
+    + Same as early retirement allowance (Section 59-1345).
+         
+
+### **IV. Disability Retirement Allowance**
+
+* Eligibility
+    + Five years of membership service (Section 59-1352).
+          
+* Amount of Allowance
+    + Projected service retirement allowance based on accrued service plus service projecrted to age 65 (latter limited to excess of 30 years over accrued service) less any amount payable under workers' compensation law (Section 59-1353).
+    
+* Normal Form
+    + Temporary annuity to age 65 plus any death benefit. Service retirement allowance becomes payable at age 65 (Section 59-1354).
+
+
+### **V. Death Benefit**
+
+* After Retirement
+    + Under the normal form of the retirement allowance, the excess, if any, of the member's accumulated contributions with interest at retirement over all payments received. Otherwise, payable according to the option elected (Section 59-1361). 
+          
+* Before Retirement
+    + An automatic joint and survivor option applied to the actuarial equivalent of the member's accrued service retirement allowance is paid to the surviving spouse of a member with at least five years of service who dies while: (i) contributing; (ii) not contributing, but eligible for benefits; or (iii) retired for disability...OR
+    
+    + If a member with at least five years of service has no spouse, a lump sum payment is made equal to twice the accumulated contributions with interest (Section 59-1361)...OR
+    
+    + If a member with at least five years of service has no spouse, a lump sum payment is made equal to twice the accumulated contributions with interest (Section 59-1361).
+    
+           
+### **VI. Employee Contributions**
+
+* The financing objective of the Fund is to establish contriubtion rates that will tend to remain  level as percentages of payroll. The current total contribution rate is 74.10%:62.53% employer contribution rate and 11.57% employee contribution rate. 
+
+
+\newpage
+
+
+
+## Section 2: Actuarial Assumptions
+
+
+
+#### **Decrement Assumptions**
+
+* Decrement Asssumptions:
+     + Active members: death, termination, disability, and retirement.
+     
+     + Non-active members: death only
+     
+     + Single-decrement environment: probability of decrement (q) = rate of decrement (q')
+     
+     + Multiple-decrement environment: q (probability) < q' (rate)
+     
+          + 2 decrement environment: $$\mathbf{q^{(1)} = q'^{(1)} [1 - \frac{1}{2} q'^{(2)}]}$$
+          
+``` {r, eval = T}
+
+double_decrement <- function(qr_1, qr_2) {
+  
+  qr_1 * (1 - (1/2) * qr_2)
+  
+}
+
+
+```
+
+
+          
+  + 3 decrement environment: $$\mathbf{q^{(1)} = q'^{(1)} [1 - \frac{1}{2} (q'^{(2)} +      q'^{(3)}) + \frac{1}{3}q'^{(2)} q'^{(3)}]}$$
+          
+          
+``` {r, eval = T}
+
+three_decrement <- function(qr_1, qr_2, qr_3) {
+  
+  qr_1 * (1 - ((1/2) * (qr_2 + qr_3)) + ((1/3) * (qr_2 * qr_3)))
+  
+}
+
+
+```
+          
+          
+
+* Mortality Decrement:
+  + Probability of a life age *x* living *n* years:
+     
+     $$\mathbf{P_{x \to n} = \prod_{t = 0}^{n-1} (1 - q'^{(m)}_{x + t}) = \prod_{t = 0}^{n-1} (p'^{(m)}_{x + t})}$$
+     
+  + Note that *p* and *q* are complementary probabilties of each other
+     
+
+* Salary Assumption = Merit + Productivity + Inflation
+
+* Interest Assumption (Discount Rate, ARR) = Risk-Free Rate + Risk Premium + Inflation
+
+\newpage
+
+### Idaho Data
+
+**Mortality**
+
+![](mortality.png)
+The RP-2000 tables are available via this hyperlink [https://www.soa.org/globalassets/assets/files/research/exp-study/rp00_mortalitytables.pdf](https://www.soa.org/globalassets/assets/files/research/exp-study/rp00_mortalitytables.pdf). To get this into a data frame, we read in the pdf and created a data frame in R to export to Excel format. 
+
+
+***Male Mortality Table***
+```{r}
+library(readxl)
+library(knitr)
+
+m_mort <- read_excel("male_mortality_tables.xlsx")
+
+kable(m_mort[49:71, ])
+```
+
+***Female Mortality Table***
+```{r}
+f_mort <- read_excel("female_mortality_tables.xlsx")
+
+kable(f_mort[49:71, ])
+```
+ 
+ 
+NEED TABLE A-8B
+
+We need Table A-8B to see what the "generational mortality adjustments using projection scale AA".
+
+However, we can set back one year males and females mortality tables. For disabled members a one-year setback for males a one-year set forward for females. 
+
+
+***Modified Male Mortality Table***
+```{r}
+m_mort_mod <- read_excel("male_mortality_tables_mod.xlsx")
+
+kable(m_mort_mod[49:71, ])
+```
+
+
+
+***Modified Female Mortality Table***
+
+```{r}
+f_mort_mod <- read_excel("female_mortality_tables_mod.xlsx")
+
+kable(f_mort_mod[49:71, ])
+```
+
+
+
+ 
+**Disability Retirement**
+ 
+![](disability_retirement.png)
+
+We don't need to lag disability retirement data, but the data available in the valuation report does not include intermediate ages. One way to overcome this is through linear interpolation (creating a straight line between the known data points). In base R we can use the approx function.
+
+
+```{r}
+##### Disability Retirement #####
+
+age_dr <- c(25, 35, 45, 55)
+age_dr <- approx(age_dr, n = 31)$y
+
+dr_m <- c(0.0001, 0.0003, 0.0011, 0.0032)
+dr_m <- approx(dr_m, n = 31)$y
+
+dr_f <- c(0.0001, 0.0001, 0.0010, 0.0028)
+dr_f <- approx(dr_f, n = 31)$y
+
+dis_ret <- cbind(age_dr, dr_m, dr_f)
+dis_ret <- as.data.frame(dis_ret)
+names(dis_ret) <- c("Age", "General Employees - Male", "General Employees - Female")
+
+kable(head(dis_ret))
+
+#write.xlsx(dis_ret, file = "disability_retirement.xlsx", sheetName = "Disability Retirement")
+```
+
+
+**Other Terminations**
+
+![](other_terminations.PNG)
+
+
+
+```{r}
+yos <- c(5, 10, 15, 20, 25, 30)
+yos <- approx(yos, n = 26)$y
+
+ter_m <- c(0.088, 0.055, 0.035, 0.024, 0.017, 0.015)
+ter_m <- approx(ter_m, n = 26)$y
+
+ter_f <- c(0.103, 0.064, 0.04, 0.029, 0.025, 0.025)
+ter_f <- approx(ter_f, n = 26)$y
+
+oth_ter <- cbind(yos, ter_m, ter_f)
+oth_ter <- as.data.frame(oth_ter)
+names(oth_ter) <- c("Years of Service", "General Employees - Male", "General Employees - Female")
+
+kable(head(oth_ter))
+
+
+#write.xlsx(oth_ter, file = "other_terminations_retirement.xlsx", sheetName = "Other Terminations")
+```
+
+
+
+**Early Retirement**
+
+![](early_retirement.png)
+
+***REVIEW: Early Retirement w/ 55 as First Year Eligibility***
+
+```{r}
+age_e <- c(56, 60)
+age_e <- approx(age_e, n = 5)$y
+
+ret_m <- c(0.03, 0.06)
+ret_m <- approx(ret_m, n = 5)$y
+
+ret_f <- c(0.06, 0.12)
+ret_f <- approx(ret_f, n = 5)$y
+
+early_ret <- cbind(age_e, ret_m, ret_f)
+early_ret <- as.data.frame(early_ret)
+names(early_ret) <- c("Age", "General Employees - Male", "General Employees - Female")
+
+addon <- c(55, 0.03, 0.06)
+
+early_ret <- rbind(addon, early_ret)
+
+kable(early_ret)
+
+#write.xlsx(early_ret, file = "early_retirement.xlsx", sheetName = "Early Retirement")
+```
+
+
+
+
+**Service Retirement**
+
+![](service_retirement.png)
+
+***NEEDS REVISON: Service Retirement w/ 60 First Year Eligible***
+```{r}
+age_t <- c(55, 60, 65, 70)
+age_t <- approx(age_t, n = 16)$y
+
+fye_m <- c(0.22, 0.26, 0.33, 0.18)
+fye_m <- approx(fye_m, n = 16)$y
+
+ta_m <- c(0.1, 0.17, 0.5, 0.2)
+ta_m <- approx(ta_m, n = 16)$y
+
+fye_f <- c(0.26, 0.26, 0.37, 0.18)
+fye_f <- approx(fye_f, n = 16)$y
+
+ta_f <- c(0.18, 0.18, 0.52, 0.21)
+ta_f <- approx(ta_f, n = 16)$y
+
+serv_ret <- cbind(age_t, fye_m, ta_m, fye_f, ta_f)
+serv_ret <- as.data.frame(serv_ret)
+
+names(serv_ret) <- c("Age", "Male - First Year Eligible", "Male - There after",
+                     "Female - First Year Eligible", "Female - There after")
+
+kable(serv_ret)
+```
+
+
+
+ 
+     
+``` {r}
+# Single decrement
+
+library(readxl)
+library(knitr)
+
+dec_tables <- read_excel('Idaho_Decrement_071620.xlsx')
+
+dec_tables <- as.data.frame(dec_tables)
+
+kable(head(dec_tables))
+
+
+survival_prob <- function(start_age = 20, end_age = 65) {
+  i <- start_age
+  j <- end_age
+  prod(1 - dec_tables[i:j, 2])
+}
+
+survival_prob(30, 65)
+
+```
+
+**You can create multiple decrements column using the previous equations, then simple call that column**
+
+``` {r}
+
+library(readxl)
+library(tidyverse)
+library(knitr)
+
+
+dec_tables <- read_excel('Idaho_Decrement_071620.xlsx')
+
+dec_tables <- as.data.frame(dec_tables)
+
+
+kable(head(dec_tables))
+
+
+double_decrement <- function(qr_1, qr_2) {
+  
+  qr_1 * (1 - (1/2) * qr_2)
+  
+}
+
+three_decrement <- function(qr_1, qr_2, qr_3) {
+  
+  qr_1 * (1 - ((1/2) * (qr_2 + qr_3)) + ((1/3) * (qr_2 * qr_3)))
+  
+}
+
+
+
+male_dec_table <- dec_tables %>%
+  select(1:2, 4, 6:7, 10)
+
+
+male_d_dec <- male_dec_table %>%
+  mutate(d_dec = double_decrement(`Mortality - Male`, `DR - Male`))
+
+
+male_t_dec <- male_d_dec %>%
+  mutate(t_dec = three_decrement(`Mortality - Male`, `DR - Male`, `SR TA - Male`))
+
+
+
+kable(male_t_dec[40:60,])
+
+
+```
+  
+     
+
+
+
+
+
