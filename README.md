@@ -5,4 +5,5 @@ Pension modeling in R
 #-Pension wealth/benefit accruals<br>
 #-Actuarial funding<br>
 #-Portfolio analysis/returns
+#-Other analyses as part of pension modeling
 
