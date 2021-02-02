@@ -1,0 +1,564 @@
+---
+title: "Pension Wealth Modeling"
+author: "Anil"
+date: "1/22/2021"
+output: html_document
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#equations: https://bookdown.org/yihui/bookdown/bookdown.pdf
+```
+
+This R Markdown document explains how Defined Benefits accrue by both text & interactive charts.
+So, each key concept is explained, followed by embedded Shiny app that allows you to change inputs & produce new estimates.
+
+To learn more, see [Interactive Documents](http://rmarkdown.rstudio.com/authoring_shiny.html).
+
+## Final Average Salary (FAS)
+https://anil-niraula.shinyapps.io/PensionWealthModeling/
+
+```{r, echo=FALSE, error=FALSE, warning=FALSE, message = FALSE}
+rm(list=ls())
+###Load/install packages
+#R.Version()
+#https://github.com/ReasonFoundation/pensionviewr
+#Create token -> usethis::edit_r_environ() -> restart -> Sys.getenv("GITHUB_PAT")
+#install.packages('devtools')
+#library(devtools)
+#devtools::install_github("ReasonFoundation/reasontheme",force = TRUE)
+#devtools::install_github("ReasonFoundation/pensionviewr", force = TRUE)
+library(reasontheme, war)
+library(pensionviewr)
+library(ggplot2)
+library(tidyverse)
+library(tseries)
+library(data.table)
+library(readr)
+#library(janitor)
+library(tidyverse)
+library(plyr)
+#library(openxlsx)
+library(tseries)
+#library(ggplot2)
+library(data.table)
+#library(openxlsx)
+#library(readr)
+library(rsconnect)
+library(base64enc)
+#Shiny-----------
+library(shiny)
+library(shinyWidgets)
+library(shinymanager)
+library(repmis)
+#library(shinyFiles)
+library(DT)
+library(plotly)
+
+
+data <- pullStateData(2001)
+    data <- filterData(data, 2017)
+    data <- data %>% select(year, plan_name, state, arr,wage_inflation,payroll_growth_assumption,ee_nc_pct)
+    
+    
+    
+  #### Final Average Salary function ####
+    fas <- function(arr, payroll_growth_assumption, start.wage, 
+                max.yos, hire.age, smooth){
+      
+    ## create table w/ key inputs
+     manual <- data.table("vesting" = 5, 
+                       "smooth" = smooth, 
+                       "hire.age" = hire.age, 
+                       "max.yos" = max.yos, "max.age" = 80,
+                       "reduced.yos" = NA, "reduced.age" = NA, 
+                       "reduced.yos.age" = 80, "payroll_growth_assumption" = payroll_growth_assumption,
+                       "normal.yos" = 30, "normal.age" = 67, "normal.yos.age" = 80, 
+                       "normal.yos.age.min" = 65,
+                       "start.wage" = start.wage*1000, "fas" = 5, "arr" = arr)
+  
+  
+  #View(data.nm.erb)
+  #View(data.nm.erb$arr)
+  
+  #####  Project Payroll
+  payroll <- matrix(NA,manual$max.yos,5) 
+  colnames(payroll) <- c("YOS", "AGE", "SALARY", "FAS", "MERIT")
+  
+  payroll[,1] <- seq(0, manual$max.yos-1, by = 1)
+  payroll[,2] <- seq(manual$hire.age, (manual$hire.age+manual$max.yos-1), by = 1)
+  
+  
+  payroll[1,3] <- as.numeric(manual$start.wage)*1000
+  payroll[1,2] <- as.numeric(manual$hire.age)
+  manual$payroll_growth_assumption <- as.numeric(manual$payroll_growth_assumption)
+  payroll <- as.data.frame(payroll)
+  
+  ### Manual Merit payroll increase rates (can substitute w/ Excel sheet)
+  payroll[1:15,5]<- c(7.00,3.50,2.75,2.25,1.75,1.50,1.25,1.00,0.75,0.50,0.25,0.25,0.25,0.25,0.25)
+  payroll[16:manual$max.yos,5]<- c(0)
+  
+  ## Calculate Payroll growth & populate YOS & AGE columns
+  
+  for(i in (2:manual$max.yos)){
+    payroll[i,3] <- payroll[i-1,3]*(1+(manual$payroll_growth_assumption + (payroll[i,5]/100)))
+  }
+  #View(payroll)
+  
+  #### Final Average Salary ####
+  
+  smooth <- manual$smooth
+  payroll[(as.numeric(smooth)+1),4] <- mean(payroll[1:smooth,3])
+  
+  ## Calculate Final Average Salary
+  
+  for(i in (smooth:(manual$max.yos-2))){
+    payroll[i+2,4] <- mean(payroll[(i-3):(i+1),3])
+  }
+  
+  payroll
+  
+}
+
+##### Pulling available data from the database
+
+##### Final Average Salary (FAS)
+
+#### components: 
+#Starting Salary, 
+#Wage Inflation/Payroll Growth Assumption
+#Merit/Promotion Growth Rate
+#Smoothing of FAS (in Years)
+
+## Total Salary Growth Rate(t-1) = Payroll Growth %(t-1) + Merit Growth %(t-1)
+## Salary(t) = Salary(t-1) * (1 + Total Salary Growth Rate(t-1))
+## Final Average Salary(t) + Average(Salary(t-SmoothedYears):Salary(t-1))
+
+#SHINY
+      #ADD slider input to choose year range
+      sliderInput('salary', 'Starting Salary ($ thousands)', min = 20, max = 50, value = 30, step = 2.5)
+      selectInput("salary.growth", "Salary Growth Rate (%)", choices = c(2, 2.5, 3, 3.5,4), 
+                  selected = 3)
+      selectInput("smooth", "FAS Smoothing (Years)", choices = c(3, 4, 5), 
+                  selected = 5)      
+
+
+#wrap around secure_app fora password protection
+##########################
+######Shiny app[server] -------------------------------------------------
+
+  
+  
+  ##Create a reactive datapull object to use for shiny graphics later
+  
+
+  #Create interactive plot
+  plotly::renderPlotly({
+    
+    data <- pullStateData(2001)
+    data <- filterData(data, 2017)
+    data <- data %>% select(year, plan_name, state, arr,wage_inflation,payroll_growth_assumption,ee_nc_pct)
+    data <- data %>% filter(plan_name == "New Mexico Educational Retirement Board")
+    data.nm.erb <- as.data.table(data)
+    data.nm.erb <- data.nm.erb[year == 2019] 
+    
+    data.nm.erb$arr <- last(na.omit(data$arr))
+    data.nm.erb$wage_inflation <- last(na.omit(data$wage_inflation))
+    data.nm.erb$payroll_growth_assumption <- last(na.omit(data$payroll_growth_assumption))
+    data.nm.erb$ee_nc_pct <- last(na.omit(data$ee_nc_pct))
+    
+    
+        #####  Using fas function + Adding manual assumptions
+    
+    graph <- data.frame(fas(arr = 0.07, 
+                 payroll_growth_assumption = as.numeric(input$salary.growth)/100, start.wage = input$salary*1000, 
+                 max.yos = 50, hire.age = 25, smooth = input$smooth))
+    
+    graph <- data.frame(graph)
+    #View(graph$YOS)
+    #Call on a reactive data that was filtered above
+    
+    #View(UAL)
+    #Graphics manual: https://bbc.github.io/rcookbook/
+    #https://github.com/ReasonFoundation/pensionviewr/blob/master/README.Rmd
+    
+    p <- ggplot() +
+      ggtitle(label = paste0("Final Average Salary"))+
+      
+      geom_line(data=graph, aes(x=YOS, y=FAS, 
+                              color="Final Average Salary"),
+                size = 1.00)+
+      
+    scale_colour_manual(values=c(palette_reason$Orange))+
+      scale_y_continuous(labels = function(x) paste0("$",x), name = "")+
+      scale_x_continuous(labels = function(x) paste0(x, ""), name = "Years of Service")+
+      theme_bw()
+    #Annotating ending UAL
+   
+    p <- ggplotly(p)
+    p
+  })
+#rsconnect::appDependencies()
+```
+
+**Components**: </p>
+- Starting Salary </p>
+- Wage Inflation/Payroll Growth Assumption</p>
+- Merit/Promotion Growth Rate</p>
+- Smoothing of FAS (in Years)
+
+**Calculations**: 
+$$\begin{equation}
+* Total Salary Growth Rate_{(t-1)} = Payroll Growth Rate_{(t-1)} + Merit Growth Rate_{(t-1)}
+\end{equation}$$
+$$\begin{equation}
+* Salary_{(t0)} = Starting Salary ($)
+\end{equation}$$
+$$\begin{equation}
+* Salary_{(t)} = Salary_{(t-1)} * (1 + Total Salary Growth Rate_{(t-1)})
+\end{equation}$$
+$$\begin{equation}
+* Final Average Salary_{(t)} + \sum_{i=1}^{n}{\frac{(Salary_{(t-SmoothedYears)}:Salary_{(t-1)})}{n}}
+\end{equation}$$
+
+## Mortality Rates
+
+```{r , echo=FALSE, error=FALSE, message=FALSE, warning=FALSE}
+ 
+###Load/install packages
+#R.Version()
+#https://github.com/ReasonFoundation/pensionviewr
+#Create token -> usethis::edit_r_environ() -> restart -> Sys.getenv("GITHUB_PAT")
+#install.packages('devtools')
+#library(devtools)
+#devtools::install_github("ReasonFoundation/reasontheme",force = TRUE)
+#devtools::install_github("ReasonFoundation/pensionviewr", force = TRUE)
+library(reasontheme)
+library(pensionviewr)
+library(ggplot2)
+library(tidyverse)
+library(tseries)
+library(data.table)
+library(readr)
+library(rsconnect)
+library(dplyr)
+library(plyr)
+library(reasontheme)
+library(pensionviewr)
+#library(janitor)
+library(tidyverse)
+library(plyr)
+#library(openxlsx)
+library(tseries)
+#library(ggplot2)
+library(data.table)
+library(openxlsx)
+#library(readr)
+library(rsconnect)
+library(base64enc)
+#Shiny-----------
+library(shiny)
+library(shinyWidgets)
+library(shinymanager)
+library(repmis)
+#library(shinyFiles)
+library(DT)
+library(plotly)
+library(shiny)
+
+###### Mortality #####
+manual <- data.table("vesting" = 5, "smooth" = 5, "hire.age" = 25, "max.yos" = 56, "max.age" = 80,
+                     "reduced.yos" = NA, "reduced.age" = NA, "reduced.yos.age" = 80, "payroll.growth" = 0.03,
+                     "normal.yos" = 30, "normal.age" = 65, "normal.yos.age" = 80, "normal.yos.age.min" = 65,
+                     "start.wage" = 30000, "fas" = 5)
+
+#Loading RP-2014 Mortality Table (SOA)
+urlfile="https://raw.githubusercontent.com/ReasonFoundation/databaseR/master/files/RP-2014.csv"
+rp.2014 <- data.table(
+  read_csv(url(urlfile), col_names = TRUE, na = c(""),skip_empty_rows = TRUE, col_types = NULL)
+)
+
+#Loading Pub-2010 Teachers Mortality Table (SOA)
+urlfile="https://raw.githubusercontent.com/ReasonFoundation/Pension-Modeling/master/data/Pub-2010.Mortality.Teachers.csv"
+pub.2010 <- data.table(
+  read_csv(url(urlfile), col_names = TRUE, na = c(""),skip_empty_rows = TRUE, col_types = NULL)
+)
+
+#Create extended table to add "smoothed" mortality rates between Pub-2010 given ones
+
+#View(pub.2010)
+pub.2010.smooth  <- matrix(NA,96,3) 
+pub.2010.smooth[,1] <- seq(25, 120, by = 1)
+pub.2010.smooth <- data.frame(pub.2010.smooth)
+
+#Add w/ given Pub-2010 rates
+pub.2010.smooth[1,2]  <- pub.2010[1,2]
+pub.2010.smooth[1,3]  <- pub.2010[1,3]
+for(i in (1:51)){
+  pub.2010.smooth[(5*i+1),2]  <- pub.2010[(i+1),2]
+  pub.2010.smooth[(5*i+1),3]  <- pub.2010[(i+1),3]
+}
+
+colnames(pub.2010.smooth) <- c("age", "male", "female")
+
+## Compound function
+#compound <- function(initial, rate, period){
+#  value <- matrix(NA,period,1) 
+#  for(i in (1:period)){
+#  value[i,] <- initial*(1+rate)^(i)
+#  }
+#  value
+#}
+
+## Addition function
+add <- function(initial, amount, period){
+  value <- matrix(NA,period,1) 
+  for(i in (1:period)){
+    value[i,] <- initial+(amount)*(i)
+  }
+  value
+}
+
+#### Create Smoothed Rates for Males ####
+
+#Create containers
+scale <- matrix(NA,(length(pub.2010$male)-1),1) 
+value <- matrix(NA,4,(length(pub.2010$male)-1)) 
+
+#CALCULATE INCREMENTAL smoothing amounts
+#And use the, to Create 4-year scale to each of Pub-2010 given mortality rates
+
+for(k in (1:(length(pub.2010$male)-1))){
+  #Calculating the proportional change within 4-year window (dividing by 5)
+  scale[k,] <- (pub.2010$male[k+1]-pub.2010$male[k])/5
+  #Applying this change to previous year Mortality rate for smoothing 
+  value[,k] <- add(pub.2010$male[k], scale[k],4)
+}
+
+value <- data.frame(value)
+
+#Putting each column under each other 
+#for a full set of smoothed Mortality rate in 1 column
+
+value2 <- rbind(value[,1], value[,2]) 
+value2 <- rbind(value2, value[,3]) 
+value2 <- rbind(value2, value[,4]) 
+value2 <- rbind(value2, value[,5]) 
+value2 <- rbind(value2, value[,6]) 
+value2 <- rbind(value2, value[,7]) 
+value2 <- rbind(value2, value[,8]) 
+value2 <- rbind(value2, value[,9]) 
+
+value2 <- data.frame(value2)
+value <- pivot_longer(value2,X1:X4)
+#View(value)
+#View(pub.2010.smooth2)
+#Finding at which ages we have missing Mortality rates
+#Or ages we apply smoothing for
+pub.2010.smooth2 <- pub.2010.smooth %>%
+  filter(is.na(male))
+pub.2010.smooth2 <- pub.2010.smooth2[1:36,1]
+
+x <- cbind(pub.2010.smooth2, value[,2])
+colnames(x) <- c("age", "male")
+x <- data.frame(x)
+
+##Attaching Smoother Rates to Missing Age column
+pub.2010 <- data.frame(pub.2010)
+#View(x)
+#View(pub.2010.smooth[,1:2])
+#View(x)
+#Joining
+pub.2010.smoothed_male <- pub.2010.smooth[,1:2] %>%
+  ## Join Original Pub-2010 rates w/ Smoothed Rate column
+  full_join(x, by = c("age"), suffix = c("_Pub_2010", "_Smoothed")) %>%
+  ## Replace all NAs w/ 0
+  replace_na(list("male_Pub_2010" = 0,
+                  "male_Smoothed" = 0)) %>%
+  ## Add rates in both columns to create one merged column
+  mutate(Pub2010Smoothed = male_Pub_2010+male_Smoothed) %>%
+  ## Keep age & the new column
+  select(age, Pub2010Smoothed)
+
+
+#### Create Smoothed Rates for Females ####
+
+#Create containers
+scale <- matrix(NA,(length(pub.2010$female)-1),1) 
+value <- matrix(NA,4,(length(pub.2010$male)-1)) 
+
+#CALCULATE INCREMENTAL smoothing amounts
+#And use the, to Create 4-year scale to each of Pub-2010 given mortality rates
+
+for(k in (1:(length(pub.2010$female)-1))){
+  #Calculating the proportional change within 4-year window (dividing by 5)
+  scale[k,] <- (pub.2010$female[k+1]-pub.2010$female[k])/5
+  #Applying this change to previous year Mortality rate for smoothing 
+  value[,k] <- add(pub.2010$female[k], scale[k],4)
+}
+
+#View(value)
+value <- data.frame(value)
+#Putting each column under each other 
+#for a full set of smoothed Mortality rate in 1 olumn
+
+value2 <- rbind(value[,1], value[,2]) 
+value2 <- rbind(value2, value[,3]) 
+value2 <- rbind(value2, value[,4]) 
+value2 <- rbind(value2, value[,5]) 
+value2 <- rbind(value2, value[,6]) 
+value2 <- rbind(value2, value[,7]) 
+value2 <- rbind(value2, value[,8]) 
+value2 <- rbind(value2, value[,9]) 
+
+value2 <- data.frame(value2)
+value <- pivot_longer(value2,X1:X4)
+#View(value)
+#View(pub.2010.smooth2)
+#Finding at which ages we have missing Mortality rates
+#Or ages we apply smoothing for
+pub.2010.smooth2 <- pub.2010.smooth %>%
+  filter(is.na(female))
+pub.2010.smooth2 <- pub.2010.smooth2[1:36,1]
+
+x <- cbind(pub.2010.smooth2, value[,2])
+colnames(x) <- c("age", "female")
+x <- data.frame(x)
+##Attaching Smoother Rates to Missing Age column
+pub.2010 <- data.frame(pub.2010)
+#View(x)
+#View(pub.2010.smooth[,1:2])
+
+#Joining
+pub.2010.smooth <- pub.2010.smooth %>% select(age, female)
+pub.2010.smoothed_female <-  pub.2010.smooth %>%
+  ## Join Original Pub-2010 rates w/ Smoothed Rate column
+  full_join(x, by = c("age"), suffix = c("_Pub_2010", "_Smoothed")) %>%
+  ## Replace all NAs w/ 0
+  replace_na(list("female_Pub_2010" = 0,
+                  "female_Smoothed" = 0)) %>%
+  ## Add rates in both columns to create one merged column
+  mutate(Pub2010Smoothed = female_Pub_2010+female_Smoothed) %>%
+  ## Keep age & the new column
+  select(age, Pub2010Smoothed)
+
+####################### RESULTS
+#View(pub.2010.smoothed_male)
+#View(pub.2010.smoothed_female)
+
+#Adjust the Smoothed Estimated/Add smoothed rates in-between Pub-2010 rates
+#View(rp.2014)
+urlfile="https://raw.githubusercontent.com/ReasonFoundation/databaseR/master/files/MP_2017_Male.csv"
+mp.2017.male <- read_csv(url(urlfile), col_names = TRUE, na = c(""),skip_empty_rows = TRUE, col_types = NULL)
+mp.2017.male <- mp.2017.male[1:101,]
+
+urlfile="https://raw.githubusercontent.com/ReasonFoundation/databaseR/master/files/MP_2017_Female.csv"
+mp.2017.female <- read_csv(url(urlfile), col_names = TRUE, na = c(""),skip_empty_rows = TRUE, col_types = NULL)
+mp.2017.female <- mp.2017.female[1:101,]
+
+#View(mp.2017.male)
+
+#[1] Project Pub2010 from 2010 w/ MP-2017
+#[2] Project RP-2014 from 2014 w/ MP-2017
+pub2010.male.scale <- mp.2017.male 
+pub2010.male.scale <- pub2010.male.scale[1:51,] %>% filter(Age >= 25)
+pub2010.male.scale <- pub2010.male.scale[,-(2:11)] 
+pub2010.male.scale.2033 <- pub2010.male.scale$`2033`
+
+pub.2010.smoothed_male <- pub.2010.smoothed_male[1:46,]
+pub2010.male.scale$`2010` <- pub.2010.smoothed_male$Pub2010Smoothed
+
+## Take 2010 smotthed rates & multiply by (1-MP-2017 rate for 2011...)
+for (k in (3:length(pub2010.male.scale))){
+  pub2010.male.scale[,k] <- pub2010.male.scale[,as.numeric(k-1)]*(1-pub2010.male.scale[,k])
+  
+}
+
+#View(pub2010.male.scale)
+
+pub2010.male.scale <- data.table(pub2010.male.scale)
+x <-seq(2034, 2130, by = 1)
+
+## Using data.table to add new columns
+## Using adjusted 2033 pub-2010 rates & multiply them by (1-MP-2017 for 2033)^(distance from 2033)
+for (k in (first(x):last(x))){
+  pub2010.male.scale[, as.character(k) := pub2010.male.scale$`2033`*(1-pub2010.male.scale.2033)^(k-2033)]
+}
+
+
+pub2010.female.scale <- mp.2017.female 
+pub2010.female.scale <- pub2010.female.scale[1:51,] %>% filter(Age >= 25)
+pub2010.female.scale <- pub2010.female.scale[,-(2:11)] 
+pub2010.female.scale.2033 <- pub2010.female.scale$`2033`
+
+pub.2010.smoothed_female <- pub.2010.smoothed_female[1:46,]
+pub2010.female.scale$`2010` <- pub.2010.smoothed_female$Pub2010Smoothed
+
+## Take 2010 smotthed rates & multiply by (1-MP-2017 rate for 2011...)
+for (k in (3:length(pub2010.female.scale))){
+  pub2010.female.scale[,k] <- pub2010.female.scale[,as.numeric(k-1)]*(1-pub2010.female.scale[,k])
+  
+}
+
+#View(pub2010.male.scale)
+
+pub2010.female.scale <- data.table(pub2010.female.scale)
+x <-seq(2034, 2130, by = 1)
+
+## Using data.table to add new columns
+## Using adjusted 2033 pub-2010 rates & multiply them by (1-MP-2017 for 2033)^(distance from 2033)
+for (k in (first(x):last(x))){
+  pub2010.female.scale[, as.character(k) := pub2010.female.scale$`2033`*(1-pub2010.female.scale.2033)^(k-2033)]
+}
+
+#View(pub2010.male.scale)
+#View(pub2010.female.scale)
+
+pub2010.male.scale[,2:122] <- round(pub2010.male.scale[,2:122]*100,5)
+pub2010.female.scale[,2:122] <- round(pub2010.female.scale[,2:122]*100,5)
+
+### Visualize probability of mortality next year (male vs. female)
+## Pub-2010
+pub2010.male.scale <- as.data.frame(pub2010.male.scale)
+
+graph <- ggplot(pub2010.male.scale, aes(x = pub2010.male.scale[,1]))+
+  ggtitle(label = paste0("Pub-2010 Teacher Mortailty Next Year <br> (Actives Age 25-70)"))+
+    geom_line(aes(y = diag(as.matrix(pub2010.male.scale[,-1])),group = 1,
+                text = paste("Mortality Next Year (Male):",                                            round(diag(as.matrix(pub2010.male.scale[,-1])),4), "%")),
+              color = palette_reason$LightBlue, size = 1)+
+  geom_line(aes(y = diag(as.matrix(pub2010.female.scale[,-1])), group = 1,
+                text = paste("Mortality Next Year (Female):",
+                       round(diag(as.matrix(pub2010.female.scale[,-1])),4), "%")),
+            color = palette_reason$LightOrange, size = 1)+
+  scale_y_continuous(labels = function(x) paste0(x,"%"), name = "Pub-2010 Mortality Rates")+theme_bw()+
+  scale_x_continuous(labels = function(x) paste0(x), name = "Age")
+
+graph <- ggplotly(graph, tooltip = c("text"))
+graph <-graph %>% layout(autosize = TRUE, legend = list(orientation = "v", x=0.01, y = 1))
+graph
+```
+
+**Components**: </p>
+- Actives Mortality Table (e.g. RP-2014, plan's own table) </p>
+- Retired Mortality Table (set Normal eligibility age) </p>
+- Any Adjustments Applied (e.g. set back 1 year) </p>
+- Improvement Sale Used (e.g. MP-2017) & Year Projections Start </p>
+
+
+**Calculations**: 
+$$\begin{equation}
+* Pub2010^{MortalityAdjusted}_{(t)} = Pub2010^{MortalityRate}_{(t-1)} * (1-MP2017^{AdjustmentRate}_{(t-1)})
+\end{equation}$$
+$$\begin{equation}
+* Pub2010^{CompoundSurvival}_{(t)} = Pub2010^{CompoundSurvival}_{(t-1)} * (1-Pub2010^{MortalityAdjusted}_{(t-1)})
+\end{equation}$$
+
+Note the use of the `height` parameter to determine how much vertical space the embedded application should occupy.
+
+You can also use the `shinyApp` function to define an application inline rather then in an external directory.
+
+In all of R code chunks above the `echo = FALSE` attribute is used. This is to prevent the R code within the chunk from rendering in the document alongside the Shiny components.
+
+
+
