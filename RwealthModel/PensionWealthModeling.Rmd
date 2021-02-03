@@ -172,7 +172,7 @@ data <- pullStateData(2001)
         #####  Using fas function + Adding manual assumptions
     
     graph <- data.frame(fas(arr = 0.07, 
-                 payroll_growth_assumption = as.numeric(input$salary.growth)/100, start.wage = input$salary*1000, 
+                 payroll_growth_assumption = as.numeric(input$salary.growth)/100, start.wage = input$salary, 
                  max.yos = 50, hire.age = 25, smooth = input$smooth))
     
     graph <- data.frame(graph)
